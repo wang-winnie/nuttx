@@ -824,11 +824,11 @@ static int gb_uart_init(unsigned int cport)
 
 	 gb_info("%s(): GB uart  2  \n", __func__);
 	
-   // ret = device_uart_get_line_status(info->dev, &ls);
-   // if (ret != SUCCESS) {
-	//	gb_info("%s(): GB uart  device_uart_get_line_status  init_err \n", __func__);
-   //     goto init_err;
-   // }
+    ret = device_uart_get_line_status(info->dev, &ls);
+    if (ret != SUCCESS) {
+		gb_info("%s(): GB uart  device_uart_get_line_status ret %d \n", __func__,ret);
+        goto init_err;
+    }
 
 
 	gb_info("%s(): GB uart  3  \n", __func__);

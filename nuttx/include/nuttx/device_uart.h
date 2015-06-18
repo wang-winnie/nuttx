@@ -205,7 +205,6 @@ static inline int device_uart_get_line_status(struct device *dev,
 {
     if (dev->state != DEVICE_STATE_OPEN)
     {
-		// gb_info("%s(): GB uart  device_uart_get_line_status ENODEV  \n", __func__);
         return -ENODEV;
 	}
 	
@@ -213,8 +212,6 @@ static inline int device_uart_get_line_status(struct device *dev,
         return dev->driver->ops->type_ops.uart->get_line_status(dev,
                                                                 line_status);
 
-
-	//gb_info("%s(): GB uart  device_uart_get_line_status EOPNOTSUPP  \n", __func__);
     return -EOPNOTSUPP;
 }
 

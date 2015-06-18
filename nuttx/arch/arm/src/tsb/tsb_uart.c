@@ -955,6 +955,7 @@ static struct device_uart_type_ops tsb_uart_type_ops = {
     .get_modem_ctrl     = tsb_uart_get_modem_ctrl,
     .set_modem_ctrl     = tsb_uart_set_modem_ctrl,
     .get_modem_status   = tsb_uart_get_modem_status,
+    .get_line_status   = tsb_uart_get_line_status,
     .set_break          = tsb_uart_set_break,
     .attach_ms_callback = tsb_uart_attach_ms_callback,
     .attach_ls_callback = tsb_uart_attach_ls_callback,
