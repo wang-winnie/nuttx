@@ -6,6 +6,12 @@
 
 #include "tsb_scm.h"
 
+
+#include <nuttx/kmalloc.h>
+#include <nuttx/wqueue.h>
+
+
+
 #define UART_RBR_THR_DLL    (UART_BASE + 0x0)
 #define UART_IER_DLH        (UART_BASE + 0x4)
 #define UART_FCR_IIR        (UART_BASE + 0x8)
@@ -38,6 +44,13 @@ void tsb_lowsetup(void) {
     tsb_reset(TSB_RST_UARTP);
     tsb_reset(TSB_RST_UARTS);
 
+
+	lldbg("LL uart info tsb_lowsetup ++ \n");
+	//tsb_set_pinshare(TSB_PIN_UART_RXTX);	
+	tsb_set_pinshare(TSB_PIN_UART_CTSRTS);
+	tsb_clr_pinshare(TSB_PIN_SDIO);
+	tsb_clr_pinshare(TSB_PIN_GPIO9);
+
     /*
      * The controller requires "several cycles" after reset to stabilize before
      * register writes will work. Try this a few times.
@@ -61,6 +74,10 @@ void tsb_lowsetup(void) {
         putreg32(UART_FCR_IIR_IID0_FIFOE | UART_FCR_IIR_IID1_RFIFOR |
                  UART_FCR_IIR_IID1_XFIFOR, UART_FCR_IIR);
     }
+    
+    putreg32('A', UART_RBR_THR_DLL);
+    
+    
 }
 
 void up_lowputc(int c){

@@ -60,8 +60,8 @@ static struct device_resource tsb_uart_resources[] = {
     {
         .name   = "reg_base",
         .type   = DEVICE_RESOURCE_TYPE_REGS,
-        .start  = UART_SIZE,
-        .count  = SYSCTL_SIZE,
+        .start  = UART_BASE,
+        .count  = UART_SIZE,
     },
     {
         .name   = "irq_uart",

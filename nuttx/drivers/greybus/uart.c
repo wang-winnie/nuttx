@@ -294,9 +294,16 @@ void uart_rx_callback(uint8_t *buffer, int length, int error)
 {
     struct op_node *node = NULL;
     int ret = SUCCESS;
+	int i=0; 
+	
+	gb_info("%s():   +++   length = %d \n", __func__,length );
 
     *info->rx_node->data_size = length;
     put_node_back(&info->data_queue, info->rx_node);
+	
+	for(i=0;i<8;i++)
+		gb_info("%s(): char[%d] = %c   \n", __func__,i,info->rx_node[i]);
+
 
     node = get_node_from(&info->free_queue);
     if (node == NULL) {
@@ -592,6 +599,8 @@ static uint8_t gb_uart_protocol_version(struct gb_operation *operation)
 {
     struct gb_uart_proto_version_response *response = NULL;
 
+	//gb_info("%s():   +++   \n", __func__);
+
     response = gb_operation_alloc_response(operation, sizeof(*response));
     if (!response)
         return GB_OP_NO_MEMORY;
@@ -617,6 +626,7 @@ static uint8_t gb_uart_send_data(struct gb_operation *operation)
 {
     int ret = SUCCESS;
     int sent = 0;
+    //gb_info("%s():   +++   \n", __func__);
     struct gb_uart_send_data_request *request =
                     gb_operation_get_request_payload(operation);
 
@@ -646,6 +656,7 @@ static uint8_t gb_uart_set_line_coding(struct gb_operation *operation)
 {
     int ret = SUCCESS;
     int baud, parity, databits, stopbit, flow;
+    //gb_info("%s():   +++   \n", __func__);
     struct gb_serial_line_coding_request *request =
                     gb_operation_get_request_payload(operation);
 
@@ -719,6 +730,7 @@ static uint8_t gb_uart_set_control_line_state(struct gb_operation *operation)
 {
     int ret = SUCCESS;
     uint8_t modem_ctrl = 0;
+    //gb_info("%s():   +++   \n", __func__);
     struct gb_uart_set_control_line_state_request *request =
                 gb_operation_get_request_payload(operation);
 
@@ -761,6 +773,7 @@ static uint8_t gb_uart_set_control_line_state(struct gb_operation *operation)
 static uint8_t gb_uart_send_break(struct gb_operation *operation)
 {
     int ret = SUCCESS;
+    //gb_info("%s():   +++   \n", __func__);
     struct gb_uart_set_break_request *request =
                   gb_operation_get_request_payload(operation);
 
@@ -814,7 +827,6 @@ static int gb_uart_init(unsigned int cport)
     }
 
 	
-	 gb_info("%s(): GB uart 1  \n", __func__);
 	 
     /* update serial status */
     ret = device_uart_get_modem_status(info->dev, &ms);
@@ -822,21 +834,16 @@ static int gb_uart_init(unsigned int cport)
         goto init_err;
     }
 
-	 gb_info("%s(): GB uart  2  \n", __func__);
 	
     ret = device_uart_get_line_status(info->dev, &ls);
     if (ret != SUCCESS) {
-		gb_info("%s(): GB uart  device_uart_get_line_status ret %d \n", __func__,ret);
         goto init_err;
     }
 
-
-	gb_info("%s(): GB uart  3  \n", __func__);
 	
     info->last_serial_state = parse_ms_ls_registers(ms, ls);
 
-	gb_info("%s(): GB uart  4  \n", __func__);
-	
+
     ret = device_uart_attach_ms_callback(info->dev, uart_ms_callback);
     if (ret != SUCCESS) {
         goto init_err;
@@ -850,6 +857,25 @@ static int gb_uart_init(unsigned int cport)
     /* trigger the first receiving */
     info->require_node = 1;
     sem_post(&info->rx_sem);
+
+
+
+	 //test 
+	 gb_info("%s(): GB uart info struct:send_break \n", __func__);
+	 device_uart_set_break(info->dev, 0);
+
+
+	gb_info("%s(): GB uart info struct:send_data \n", __func__);
+	u8 test[] = "12345678"; 
+	device_uart_start_transmitter(info->dev,
+							test, sizeof(test), NULL,
+							NULL, NULL);
+
+	 gb_info("%s(): GB uart info struct:send_break \n", __func__);
+	 device_uart_set_break(info->dev, 0);
+
+
+
 
 
 	 gb_info("%s(): GB uart  ---  \n", __func__);

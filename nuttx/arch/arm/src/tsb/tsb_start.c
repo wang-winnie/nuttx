@@ -59,7 +59,8 @@ void tsb_start(void) {
     /* Configure the UART so we can get debug output as soon as possible */
     tsb_lowsetup();
     dbg('A');
-
+	
+ 
 #ifdef CONFIG_TSB_PINSHARE_ETM
     tsb_set_pinshare(TSB_PIN_ETM);
 
