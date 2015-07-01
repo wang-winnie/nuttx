@@ -34,21 +34,18 @@
 #include <nuttx/wqueue.h>
 #include <nuttx/device.h>
 #include <nuttx/device_uart.h>
-#include <nuttx/serial/uart_16550.h>
 
 #include "up_arch.h"
 #include "tsb_scm.h"
 #include "tsb_uart.h"
 
-#define SUCCESS     0
-
 #define UART_RBR_THR_DLL    (UART_BASE + 0x0)
 
 /**
- * struct tsb_uart_info - the driver internal variable
+ * struct tsb_uart_info - the driver internal information.
  */
 struct tsb_uart_info {
-    /** ?? */ 
+    /** device driver handler */
     struct device   *dev;
     /** UART driver flags */
     uint32_t        flags;
@@ -63,15 +60,17 @@ struct tsb_uart_info {
     /** data bit setting */
     uint8_t         bits;
     /** stop bit setting */
-    uint8_t         stopbits2;
+    uint8_t         stopbits;
     /** Flow control setting */
     uint8_t         flow;
-    /** Interrupt enable register value */
-    uart_datawidth_t    ier;
     /** Transmit buffer structure */
     struct uart_buffer xmit;
     /** Receive buffer structure */
     struct uart_buffer recv;
+    /** transmit semaphore for blocking mode */
+    sem_t           tx_sem;
+    /** Receive semaphore for blocking mode */
+    sem_t           rx_sem;
     /** Modem status callback function */
     void            (*ms_callback)(uint8_t ms);
     /** Line status callback function */
@@ -121,7 +120,6 @@ static void ua_reg_bit_set(uint32_t reg, uint32_t offset, uint8_t bitmask)
 {
     uint8_t regvalue = ua_getreg(reg, offset);
     regvalue |= bitmask;
-   //lldbg("LL ua_reg_bit_set:  0x%x \n", regvalue);
     ua_putreg(reg, offset, regvalue);
 }
 
@@ -137,75 +135,36 @@ static void ua_reg_bit_clr(uint32_t reg, uint32_t offset, uint8_t bitmask)
 {
     uint8_t regvalue = ua_getreg(reg, offset);
     regvalue &= ~bitmask;
-    
-    //lldbg("LL ua_reg_bit_clr:  0x%x \n", regvalue);
     ua_putreg(reg, offset, regvalue);
 }
 
 /**
- * @brief Set DLAB bit.
+ * @brief Put value to register.
  *
  * @param base The UART register base address.
- * @param value The value 0 or 1.
+ * @param offset The UART register offset address.
+ * @param value The value to put into register.
  * @return None.
  */
-static void ua_set_dlab(uint32_t base, uint8_t value)
+static void dump_regs(uint32_t base)
 {
-    if (value) {
-        ua_reg_bit_set(base, UA_LCR, UA_DLAB);
-    } else {
-        ua_reg_bit_clr(base, UA_LCR, UA_DLAB);
-    }
-}
-
-/**
- * @brief Get one character from FIFO.
- *
- * @param base The UART register base address.
- * @return One character.
- */
-static uint8_t ua_get_char(uint32_t base)
-{
-    return ua_getreg(base, UA_RBR_THR_DLL);
-}
-
-/**
- * @brief Put one character into FIFO.
- *
- * @param base The UART register base address.
- * @return None.
- */
-static void ua_put_char(uint32_t base, uint8_t ch)
-{
-    ua_putreg(base, UA_RBR_THR_DLL, ch);
-   // putreg32(ch, UART_RBR_THR_DLL);
-}
-
-/**
- * @brief Turn on interrupt register bits.
- *
- * @param base The UART register base address.
- * @param interrupt The interrupt bits.
- * @return None.
- */
-static void ua_enable_interrupt(uint32_t base, uint8_t interrupt)
-{
-	//lldbg("LL ua_enable_interrupt:  0x%x \n", interrupt);
-    ua_reg_bit_set(base, UA_IER_DLH, interrupt);
-}
-
-/**
- * @brief Turn off interrupt register bits.
- *
- * @param base The UART register base address.
- * @param interrupt The interrupt bits.
- * @return None.
- */
-static void ua_disable_interrupt(uint32_t base, uint8_t interrupt)
-{
-   // lldbg("LL ua_disable_interrupt:  0x%x \n", interrupt);
-    ua_reg_bit_clr(base, UA_IER_DLH, interrupt);
-    
+    /* divisor latch */
+    ua_reg_bit_set(base, UA_LCR, UA_DLAB);
+    lldbg("DLL reg: 0x%08p\n", ua_getreg(base, UA_RBR_THR_DLL));
+    lldbg("DLH reg: 0x%08p\n", ua_getreg(base, UA_IER_DLH));
+    ua_reg_bit_clr(base, UA_LCR, UA_DLAB);
+    /* interrupts enable */
+    lldbg("IRE reg: 0x%08p\n", ua_getreg(base, UA_IER_DLH));
+    /* interrupt id */
+    lldbg("IIR reg: 0x%08p\n", ua_getreg(base, UA_FCR_IIR));
+    /* line control */
+    lldbg("LCR reg: 0x%08p\n", ua_getreg(base, UA_LCR));
+    /* modem control */
+    lldbg("MCR reg: 0x%08p\n", ua_getreg(base, UA_MCR));
+    /* line status */
+    lldbg("LSR reg: 0x%08p\n", ua_getreg(base, UA_LSR));
+    /* modem status */
+    lldbg("MSR reg: 0x%08p\n", ua_getreg(base, UA_MSR));
 }
 
 /**
@@ -217,24 +176,15 @@ static void ua_disable_interrupt(uint32_t base, uint8_t interrupt)
  */
 static void ua_set_divisor(uint32_t base, uint8_t divisor)
 {
-    ua_set_dlab(base, 1);
-    ua_putreg(base, UA_IER_DLH, divisor);
-    ua_set_dlab(base, 0);
-}
 
-/**
- * @brief Set FIFO trigger settings.
- *
- * @param base The UART register base address.
- * @param rx_level The receive water level.
- * @param tx_level The transmit water level.
- * @return None.
- */
-static void ua_set_fifo_trigger(uint32_t base, uint8_t rx_level,
-                                uint8_t tx_level)
-{
-    ua_putreg(base, UA_FCR_IIR, rx_level << UA_RX_FIF0_TRIGGER_SHIFT |
-              tx_level << UA_TX_FIF0_TRIGGER_SHIFT);
+    /* Set DLAB */
+    ua_reg_bit_set(base, UA_LCR, UA_DLAB);
+    /* Set devisor */
+    ua_putreg(base, UA_RBR_THR_DLL, divisor & 0xff);
+    ua_putreg(base, UA_IER_DLH, (divisor >> 8) & 0xff);
+    /* Clear DLAB */
+   // ua_reg_bit_set(base, UA_LCR, UA_DLAB);
+    ua_reg_bit_clr(base, UA_LCR, UA_DLAB);
 }
 
 /**
@@ -246,28 +196,6 @@ static void ua_set_fifo_trigger(uint32_t base, uint8_t rx_level,
 static uint8_t ua_get_interrupt_id(uint32_t base)
 {
     return (ua_getreg(base, UA_FCR_IIR) & UA_INTERRUPT_ID_MASK);
-}
-
-/**
- * @brief Reset FIFO.
- *
- * @param base The UART register base address.
- * @return None.
- */
-static void ua_fifo_reset(uint32_t base)
-{
-    ua_putreg(base, UA_FCR_IIR, UA_TX_FIFO_RESET | UA_RX_FIFO_RESET);
-}
-
-/**
- * @brief Enable FIFO.
- *
- * @param base The UART register base address.
- * @return None.
- */
-static void ua_fifo_enable(uint32_t base)
-{
-    ua_putreg(base, UA_FCR_IIR, UA_FIFO_ENABLE);
 }
 
 /**
@@ -307,25 +235,9 @@ static void ua_set_stop_bit(uint32_t base, uint8_t stopbit)
 static void ua_set_parity_bits(uint32_t base, uint8_t paritybits)
 {
     uint8_t lcr = ua_getreg(base, UA_LCR);
-    lcr &= ~(UART_LCR_PEN|UART_LCR_EPS);
+    lcr &= ~(UA_LCR_PEN|UA_LCR_EPS);
     lcr |= paritybits;
     ua_putreg(base, UA_LCR, lcr);
-}
-
-/**
- * @brief Set auto flow setting.
- *
- * @param base The UART register base address.
- * @param autoflow The auto flow control setting.
- * @return None.
- */
-static void ua_set_auto_flow(uint32_t base, uint8_t autoflow)
-{
-    if (autoflow) {
-        ua_reg_bit_set(base, UA_MCR, UA_AUTO_FLOW_ENABLE);
-    } else {
-        ua_reg_bit_clr(base, UA_MCR, UA_AUTO_FLOW_ENABLE);
-    }
 }
 
 /**
@@ -356,54 +268,85 @@ static uint8_t ua_is_rx_fifo_empty(uint32_t base)
  * This function put the character from buffer to FIFO until the buffer is
  * empty or FIFO is full. If buffer is empty, it calls the up layer callback
  * function.
- * 
+ *
  * @param uart_info The UART driver info structure.
  * @return None.
  */
 static void uart_xmitchars(struct tsb_uart_info *uart_info)
 {
+	int count = 0;
+	if (ua_is_tx_fifo_full(uart_info->reg_base)) {
+		lldbg("xmit: tx full\n");
+	}
     while (!ua_is_tx_fifo_full(uart_info->reg_base)) {
-        ua_put_char(uart_info->reg_base,
-                    uart_info->xmit.buffer[uart_info->xmit.head++]);
-                          
+		count++;
+		
+        ua_putreg(uart_info->reg_base, UA_RBR_THR_DLL,
+                  uart_info->xmit.buffer[uart_info->xmit.head++]);
         if (uart_info->xmit.head == uart_info->xmit.tail) {
-			uart_info->ier &= ~UART_IER_ETBEI;
-            ua_disable_interrupt(uart_info->reg_base, UART_IER_ETBEI);
+            /* Disable transmit interrupt */
+            ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ETBEI);
             if (uart_info->tx_callback) {
+				
                 uart_info->tx_callback(uart_info->xmit.buffer,
-                                       uart_info->xmit.tail, 0);
+                                       uart_info->xmit.head, 0);
+                                       
+                uart_info->flags &= ~TSB_UART_FLAG_XMIT;                       
+                
+            }
+            else {
+				
+                sem_post(&uart_info->tx_sem);
+                lldbg("xmit: tx sem_post \n");
             }
         }
     }
+    if (count > 0) {
+		lldbg("cnt:%d\n",count);
+	}
 }
 
 /**
  * @brief Receive characters from FIFO to buffer.
  *
  * This function get the character from FIFO to buffer until the buffer is full
- * or FIFO is empty. If buffer is full, it calls the up layer callback function.
- * 
+ * or FIFO is not empty. If buffer is full, it calls the up layer callback
+ * function.
+ *
  * @param uart_info The UART driver info structure.
  * @return None.
  */
 static void uart_recvchars(struct tsb_uart_info *uart_info, uint8_t int_id)
 {
-	lldbg("LL uart_recvchars interrupt_id 0x%x \n",int_id);
+	//lldbg("uart_recvchars interrupt_id 0x%x \n",int_id);
+	//dump_regs(uart_info->reg_base);
     while (!ua_is_rx_fifo_empty(uart_info->reg_base)) {
 		//lldbg("LL uart_recvchars interrupt_id  111 0x%x \n",int_id);
+      
         uart_info->recv.buffer[uart_info->recv.head++] =
-                        ua_get_char(uart_info->reg_base);
-         lldbg("LL uart_recvchars interrupt_id  ch  %c \n",ua_get_char(uart_info->reg_base));  
+                        ua_getreg(uart_info->reg_base, UA_RBR_THR_DLL);
+     
+		
+         //lldbg("uart_recvchars char  ch  %c \n",ua_getreg(uart_info->reg_base,UA_RBR_THR_DLL));  
+         
+          
        //  lldbg("LL uart_recvchars interrupt_id  ch  %x \n",ua_get_char(uart_info->reg_base));             
+       
         if (uart_info->recv.head == uart_info->recv.tail ||
-           int_id == UA_INTERRUPT_ID_TO) 
-        {
-				lldbg("LL uart_recvchars interrupt_id  222 0x%x \n",int_id);
-            uart_info->ier &= ~UART_IER_ERBFI;    
-            ua_disable_interrupt(uart_info->reg_base, UART_IER_ERBFI);
+           int_id == UA_INTERRUPT_ID_TO) {
+				lldbg("uart_recvchars interrupt_id  222 0x%x \n",int_id);
+           /* Disable receive interrupt */
+            ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ERBFI);
+
             if (uart_info->rx_callback) {
+                 uart_info->flags &= ~TSB_UART_FLAG_RECV;
                 uart_info->rx_callback(uart_info->recv.buffer,
-                                       uart_info->recv.tail, 0);
+                                       uart_info->recv.head, 0);
+
+            }
+            else {
+                sem_post(&uart_info->rx_sem);
+              //  lldbg(" !!   \n");
             }
         }
     }
@@ -413,7 +356,7 @@ static void uart_recvchars(struct tsb_uart_info *uart_info, uint8_t int_id)
  * @brief The UART interrupt handler.
  *
  * This function is attached as interrupt service when driver init.
- * 
+ *
  * @param irq The IRQ number from OS.
  * @param context The context for this interrupt.
  * @return None.
@@ -430,7 +373,7 @@ static int uart_irq_handler(int irq, void *context)
             /* no interrupt pending */
             break;
         }
-        lldbg("LL uart_irq_handler interrupt_id 0x%x \n",interrupt_id);
+        lldbg("uart_irq_handler interrupt_id 0x%x \n",interrupt_id);
         switch (interrupt_id) {
         case UA_INTERRUPT_ID_MS:
             status = ua_getreg(uart_info->reg_base, UA_MSR);
@@ -484,10 +427,10 @@ static int tsb_uart_extract_resources(struct device *dev,
 
     uart_info->uart_irq = (int)r->start;
 
-//	lldbg("LL tsb_uart_extract_resources reg_base: 0x%x\n", uart_info->reg_base);
+	//lldbg("tsb_uart_extract_resources reg_base: 0x%x\n", uart_info->reg_base);
  // lldbg("LL tsb_uart_extract_resources uart_irq: 0x%x\n", uart_info->uart_irq);
 
-    return SUCCESS;
+    return 0;
 }
 
 
@@ -509,25 +452,31 @@ static int tsb_uart_set_configuration(struct device *dev, int baud, int parity,
                                       int databits, int stopbit, int flow)
 {
     struct tsb_uart_info *uart_info;
+    uint32_t divisor;
     uint8_t lcr;
-    
+
     if (!dev) {
         return -EINVAL;
     }
-    
+
     if (!baud) {
          return -EINVAL;
     }
 
-	 lldbg("LL tsb_uart_set_configuration   \n");
+	 lldbg("tsb_uart_set_configuration   \n");
 	 
     uart_info = dev->private;
 
-    ua_fifo_reset(uart_info->reg_base);
+    /* TX and RX FIFO reset */
+    ua_putreg(uart_info->reg_base,
+              UA_FCR_IIR, UA_TX_FIFO_RESET | UA_RX_FIFO_RESET);
 
-    ua_set_fifo_trigger(uart_info->reg_base, UA_RX_FIFO_TRIGGER_1_2,
-                        UA_TX_FIFO_TRIGGER_1_2);
+    /* Set TX and RX FIFO to 1/2 */
+    ua_putreg(uart_info->reg_base, UA_FCR_IIR,
+              UA_RX_FIFO_TRIGGER_1_2 << UA_RX_FIF0_TRIGGER_SHIFT |
+              UA_TX_FIFO_TRIGGER_1_2 << UA_TX_FIF0_TRIGGER_SHIFT);
 
+    /* Set data bits */
     lcr = 0;
     switch (databits) {
     case 5:
@@ -546,8 +495,10 @@ static int tsb_uart_set_configuration(struct device *dev, int baud, int parity,
     }
     ua_set_data_bits(uart_info->reg_base, lcr);
 
+    /* Set stop bit */
     ua_set_stop_bit(uart_info->reg_base, stopbit);
-    
+
+    /* Set parity setting */
     lcr = 0;
     if (parity == ODD_PARITY) {
         lcr |= UA_LCR_PEN;
@@ -556,17 +507,25 @@ static int tsb_uart_set_configuration(struct device *dev, int baud, int parity,
     }
     ua_set_parity_bits(uart_info->reg_base, lcr);
 
-    uint32_t divisor = (48000000 >> 4) / baud;
-
+    /* set baud rate divisor */
+    divisor = (48000000 >> 4) / baud;
     ua_set_divisor(uart_info->reg_base, divisor);
 
-    ua_fifo_enable(uart_info->reg_base);
+    /* Enable TX and RX FIFO */
+    ua_putreg(uart_info->reg_base, UA_FCR_IIR, UA_FIFO_ENABLE);
+    /* Programmable THRE interrupt mode enalbe */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_PTIME);
 
-    ua_set_auto_flow(uart_info->reg_base, flow);
+    /* Set auto flow control */
+    if (flow) {
+        ua_reg_bit_set(uart_info->reg_base, UA_MCR, UA_AUTO_FLOW_ENABLE);
+    } else {
+        ua_reg_bit_clr(uart_info->reg_base, UA_MCR, UA_AUTO_FLOW_ENABLE);
+    }
 
 	 putreg32('C', UART_RBR_THR_DLL);
 
-    return SUCCESS;
+    return 0;
 }
 
 
@@ -582,18 +541,17 @@ static int tsb_uart_set_configuration(struct device *dev, int baud, int parity,
 static int tsb_uart_get_modem_ctrl(struct device *dev, uint8_t *modem_ctrl)
 {
     struct tsb_uart_info *uart_info = NULL;
-    
+
     if (dev == NULL || modem_ctrl == NULL) {
         return -EINVAL;
     }
-    
+
     uart_info = dev->private;
-    
+
     *modem_ctrl = ua_getreg(uart_info->reg_base, UA_MSR);
 
-    return SUCCESS;
+    return 0;
 }
-
 
 /**
  * @brief Set Modem control state
@@ -615,8 +573,8 @@ static int tsb_uart_set_modem_ctrl(struct device *dev, uint8_t *modem_ctrl)
     uart_info = dev->private;
 
     ua_putreg(uart_info->reg_base, UA_MCR, *modem_ctrl);
-    
-    return SUCCESS;
+
+    return 0;
 }
 
 /**
@@ -639,14 +597,14 @@ static int tsb_uart_get_modem_status(struct device *dev, uint8_t *modem_status)
     }
 
     uart_info = dev->private;
-    
+
     *modem_status = ua_getreg(uart_info->reg_base, UA_MSR);
     
-  //  lldbg("LL uart info tsb_uart_get_modem_status -- \n");
+   // lldbg("tsb_uart_get_modem_status -- \n");
     
      putreg32('m', UART_RBR_THR_DLL);
     
-    return SUCCESS;
+    return 0;
 }
 
 /**
@@ -682,7 +640,7 @@ static int tsb_uart_get_line_status(struct device *dev, uint8_t *line_status)
     
    // lldbg("LL uart info tsb_uart_get_line_status line_status %d \n",*line_status  );
     
-    return SUCCESS;
+    return 0;
 }
 
 
@@ -706,10 +664,11 @@ static int tsb_uart_set_break(struct device *dev, uint8_t break_on)
     uart_info = dev->private;
 
     //ua_reg_bit_set(uart_info->reg_base, UA_LCR, UA_LCR_BREAK);
+    //lldbg("tsb_uart_set_break : break_on  0x%x \n", break_on);
     
     putreg32('b', UART_RBR_THR_DLL);
     
-    return SUCCESS;
+    return 0;
 }
 
 /**
@@ -731,18 +690,18 @@ static int tsb_uart_attach_ms_callback(struct device *dev,
     }
 
     uart_info = dev->private;
-    
+
     if (callback == NULL) {
-        uart_info->ier &= ~UART_IER_EDSSI;
-        ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
+        /* Disable modem status interrupt. */
+        ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_EDSSI);
         uart_info->ms_callback = NULL;
-        return SUCCESS;
+        return 0;
     }
 
-    uart_info->ier |= UART_IER_EDSSI;
-    ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
+    /* Enable modem status interrupt. */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_EDSSI);
     uart_info->ms_callback = callback;
-    return SUCCESS;
+    return 0;
 }
 
 
@@ -766,18 +725,18 @@ static int tsb_uart_attach_ls_callback(struct device *dev,
     }
 
     uart_info = dev->private;
-    
+
     if (callback == NULL) {
-        uart_info->ier &= ~UART_IER_ELSI;
-        ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
+        /* Disable line status interrupt. */
+        ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ELSI);
         uart_info->ms_callback = NULL;
-        return SUCCESS;
+        return 0;
     }
 
-    uart_info->ier |= UART_IER_ELSI;
-    ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
+    /* Enable line status interrupt. */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_ELSI);
     uart_info->ls_callback = callback;
-    return SUCCESS;
+    return 0;
 }
 
 
@@ -813,19 +772,34 @@ static int tsb_uart_start_transmitter(struct device *dev, uint8_t *buffer,
 
     uart_info = dev->private;
 
+    if (uart_info->flags & TSB_UART_FLAG_XMIT) {
+        return -EBUSY;
+    }
+
+    uart_info->flags |= TSB_UART_FLAG_XMIT;
+
     uart_info->xmit.buffer = buffer;
     uart_info->xmit.head = 0;
     uart_info->xmit.tail = length;
     uart_info->xmit.size = length;
     uart_info->tx_callback = callback;
     
-    putreg32('E', UART_RBR_THR_DLL);
-    
-    uart_info->ier |= UART_IER_ETBEI;
-    ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
     
     putreg32('E', UART_RBR_THR_DLL);
-    //uart_xmitchars(uart_info);
+    
+    /* Enalbe transmit interrupt */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_ETBEI);
+
+    if (!uart_info->tx_callback) {
+        sem_wait(&uart_info->tx_sem);
+        if (sent) {
+            *sent = uart_info->xmit.head;
+        }
+        uart_info->flags &= ~TSB_UART_FLAG_XMIT;
+    }
+    
+    
+ 
     
     
     
@@ -834,7 +808,7 @@ static int tsb_uart_start_transmitter(struct device *dev, uint8_t *buffer,
    // lldbg("LL tsb_uart_get_line_status: 0x%x \n", uart_info->reg_base);
     
     
-    return SUCCESS;
+    return 0;
 }
 
 /**
@@ -847,8 +821,36 @@ static int tsb_uart_start_transmitter(struct device *dev, uint8_t *buffer,
 */
 static int tsb_uart_stop_transmitter(struct device *dev)
 {
-    /* TODO: to implement the function body */
-    return SUCCESS;
+    struct tsb_uart_info *uart_info = NULL;
+    irqstate_t flags;
+
+    if (dev == NULL) {
+        return -EINVAL;
+    }
+
+    uart_info = dev->private;
+
+    if (!(uart_info->flags & TSB_UART_FLAG_XMIT)) {
+        return -EINVAL;
+    }
+
+    flags = irqsave();
+
+    /* Disable transmit interrupt. */
+    ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ETBEI);
+    //ua_putreg(uart_info->reg_base, UA_FCR_IIR, UA_TX_FIFO_RESET);
+    ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_TX_FIFO_RESET);
+
+    irqrestore(flags);
+
+    if (uart_info->tx_callback) {
+        uart_info->tx_callback(uart_info->xmit.buffer,
+                               uart_info->xmit.head, 0);
+    } else {
+        sem_post(&uart_info->tx_sem);
+    }
+
+    return 0;
 }
 
 
@@ -877,17 +879,32 @@ static int tsb_uart_start_receiver(struct device *dev, uint8_t *buffer,
     if (dev == NULL) {
         return -EINVAL;
     }
-	lldbg("LL uart info tsb_uart_start_receiver ++ \n");
+	//lldbg("tsb_uart_start_receiver ++ \n");
     uart_info = dev->private;
-    
+
+    if (uart_info->flags & TSB_UART_FLAG_RECV) {
+	//	lldbg("TSB_UART_FLAG_RECV \n");
+        return -EBUSY;
+    }
+
+    uart_info->flags |= TSB_UART_FLAG_RECV;
+
     uart_info->recv.buffer = buffer;
     uart_info->recv.head = 0;
     uart_info->recv.tail = length;
     uart_info->recv.size = length;
     uart_info->rx_callback = callback;
 						
-	uart_info->ier |= UART_IER_ERBFI;
-    ua_enable_interrupt(uart_info->reg_base, uart_info->ier);
+    /* Enalbe receive interrupt */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_ERBFI);
+
+    if (!uart_info->rx_callback) {
+        sem_wait(&uart_info->rx_sem);
+        if (got) {
+            *got = uart_info->xmit.head;
+        }
+        uart_info->flags &= ~TSB_UART_FLAG_RECV;
+    }
     
 
 	//int i=0;
@@ -895,26 +912,47 @@ static int tsb_uart_start_receiver(struct device *dev, uint8_t *buffer,
 	//	lldbg("LL uart info tsb_uart_start_transmitter char[%d] = %c ++ \n",i, buffer[i]);
 
 
-    return SUCCESS;
+    return 0;
 }
 
 /**
-* @brief Stop the receiver
+* @brief Stop the receiver.
 *
 * The function is to stop the data receiving in blocking or non-blocking mode.
 *
-* @param dev pointer to the UART device structure
-* @return
-* @retval SUCCESS Success.
-* @retval EINVAL Invalid parameters.
+* @param dev The pointer to the UART device structure.
+* @return 0 for success, -errno for failure.
 */
 static int tsb_uart_stop_receiver(struct device *dev)
 {
-    /* TODO: to implement the function body */
-    lldbg("LL uart info tsb_uart_stop_receiver ++ \n");
-    return SUCCESS;
-}
+    struct tsb_uart_info *uart_info = NULL;
+    irqstate_t flags;
 
+    if (dev == NULL) {
+        return -EINVAL;
+    }
+
+    uart_info = dev->private;
+
+    if (!(uart_info->flags & TSB_UART_FLAG_RECV)) {
+        return -EINVAL;
+    }
+
+    flags = irqsave();
+
+    /* Disable receive interrupt. */
+    ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ERBFI);
+    //ua_putreg(uart_info->reg_base, UA_FCR_IIR, UA_RX_FIFO_RESET);
+	ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_RX_FIFO_RESET);
+	
+    irqrestore(flags);
+
+    if (!uart_info->rx_callback) {
+        sem_post(&uart_info->rx_sem);
+    }
+
+    return 0;
+}
 
 /**
 * @brief The device open function.
@@ -925,21 +963,25 @@ static int tsb_uart_stop_receiver(struct device *dev)
 * opened, it returns driver busy error number, otherwise it keeps a flag to
 * identify the driver was opened and returns success.
 *
-* @param dev pointer to the UART device structure
-* @return
-* @retval SUCCESS Success.
-* @retval EBUSY Driver is already opened.
+* @param dev The pointer to the UART device structure.
+* @return 0 for success, -errno for failures.
 */
 static int tsb_uart_dev_open(struct device *dev)
 {
     struct tsb_uart_info *uart_info = dev->private;
     irqstate_t flags;
-    int ret = SUCCESS;
+    int ret = 0;
+
+	//lldbg("LL tsb_uart_dev_open +   \n");
 
     flags = irqsave();
 
+
+	   // lldbg("LL tsb_uart_dev_open  uart_info->flags %x   \n", uart_info->flags);
+
     if (uart_info->flags & TSB_UART_FLAG_OPEN) {
         ret = -EBUSY;
+      //  lldbg("LL tsb_uart_dev_open  EBUSY  \n");
         goto err_irqrestore;
     }
 
@@ -953,12 +995,12 @@ err_irqrestore:
 
 
 /**
-* @brief The device close function
+* @brief The device close function.
 *
 * This function is called when protocol no longer using this driver.
 * The driver must be opened before calling this function.
 *
-* @param dev pointer to the UART device structure
+* @param dev The pointer to the UART device structure.
 * @return None.
 */
 static void tsb_uart_dev_close(struct device *dev)
@@ -989,24 +1031,41 @@ err_irqrestore:
 
 static int tsb_uart_set_configuration2(struct device *dev)
 {
-    struct tsb_uart_info *uart_info = NULL;
-    uint8_t lcr = 0;
-    
-    lldbg("LL tsb_uart_set_configuration2  \n");
-    
-    if (dev == NULL) {
+    struct tsb_uart_info *uart_info;
+    //uint32_t divisor;
+   // uint8_t lcr;
+
+    if (!dev) {
         return -EINVAL;
     }
 
+
+	 lldbg("tsb_uart_set_configuration 2 \n");
+	 
     uart_info = dev->private;
 
-    ua_fifo_reset(uart_info->reg_base);
+    /* TX and RX FIFO reset */
+   // ua_putreg(uart_info->reg_base,
+  //            UA_FCR_IIR, UA_TX_FIFO_RESET | UA_RX_FIFO_RESET);
+	ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_TX_FIFO_RESET | UA_RX_FIFO_RESET);
+	
+    /* Set TX and RX FIFO to 1/2 */
+    //here
+    ua_putreg(uart_info->reg_base, UA_FCR_IIR,
+             UA_RX_FIFO_TRIGGER_1_2 << UA_RX_FIF0_TRIGGER_SHIFT |
+              UA_TX_FIFO_TRIGGER_1_2 << UA_TX_FIF0_TRIGGER_SHIFT);
+   //ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_RX_FIFO_TRIGGER_1_2 << UA_RX_FIF0_TRIGGER_SHIFT |
+   //           UA_TX_FIFO_TRIGGER_1_2 << UA_TX_FIF0_TRIGGER_SHIFT);           
+    
+    //ua_putreg(uart_info->reg_base, UA_FCR_IIR, 0xB0); 
+    ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_TX_FIFO_RESET | UA_RX_FIFO_RESET);
+    
+    
+    
 
-    ua_set_fifo_trigger(uart_info->reg_base, UA_RX_FIFO_TRIGGER_1_2,
-                        UA_TX_FIFO_TRIGGER_1_2);
-
-    lcr = 0;
-  /*  switch (databits) {
+    /* Set data bits */
+   /* lcr = 0;
+    switch (databits) {
     case 5:
         lcr = UA_DLS_5_BITS;
         break;
@@ -1020,52 +1079,60 @@ static int tsb_uart_set_configuration2(struct device *dev)
     case 8 :
         lcr = UA_DLS_8_BITS;
         break;
-    }*/
-     lcr = 0;
-    //ua_set_data_bits(uart_info->reg_base, lcr);
+    }
+    ua_set_data_bits(uart_info->reg_base, lcr);*/
 
+    /* Set stop bit */
    // ua_set_stop_bit(uart_info->reg_base, stopbit);
-    
-    lcr = 0;
-   /* if (parity == ODD_PARITY) {
+
+    /* Set parity setting */
+   /* lcr = 0;
+    if (parity == ODD_PARITY) {
         lcr |= UA_LCR_PEN;
     } else if (parity == EVEN_PARITY) {
         lcr |= (UA_LCR_PEN|UA_LCR_EPS);
-    }*/
-   // ua_set_parity_bits(uart_info->reg_base, lcr);
+    }
+    ua_set_parity_bits(uart_info->reg_base, lcr);*/
 
-   // uint32_t divisor = (48000000 >> 4) / baud;
-
+    /* set baud rate divisor */
+   // divisor = (48000000 >> 4) / baud;
    // ua_set_divisor(uart_info->reg_base, divisor);
 
-    ua_fifo_enable(uart_info->reg_base);
+    /* Enable TX and RX FIFO */
+    //ua_putreg(uart_info->reg_base, UA_FCR_IIR, UA_FIFO_ENABLE);
+    ua_reg_bit_set(uart_info->reg_base, UA_FCR_IIR, UA_FIFO_ENABLE);
+    /* Programmable THRE interrupt mode enalbe */
+    ua_reg_bit_set(uart_info->reg_base, UA_IER_DLH, UA_IER_PTIME);
 
+    /* Set auto flow control */
+    /*if (flow) {
+        ua_reg_bit_set(uart_info->reg_base, UA_MCR, UA_AUTO_FLOW_ENABLE);
+    } else {
+        ua_reg_bit_clr(uart_info->reg_base, UA_MCR, UA_AUTO_FLOW_ENABLE);
+    }*/
 
-	 putreg32('c', UART_RBR_THR_DLL);
+	 putreg32('C', UART_RBR_THR_DLL);
 
-    return SUCCESS;
+    return 0;
 }
 
 
 /**
-* @brief The device probe function
+* @brief The device probe function.
 *
 * This function is called by the system to register this driver when the
 * system boots up.This function allocates memory for saving driver internal
 * information data, attaches the interrupt handlers to IRQs of the controller
 * and configures the pin settings of the UART controller.
 *
-* @param dev pointer to the UART device structure
-* @return
-* @retval SUCCESS Success.
-* @retval ENOMEM Fail to allocate the memory for driver information.
-* @retval EINTR Fail to attach IRQ handler.
+* @param dev The pointer to the UART device structure.
+* @return 0 for success, -errno for failure.
 */
 static int tsb_uart_dev_probe(struct device *dev)
 {
     struct tsb_uart_info *uart_info;
     irqstate_t flags;
-    int ret = SUCCESS;
+    int ret;
 
     uart_info = zalloc(sizeof(*uart_info));
     if (!uart_info)
@@ -1073,26 +1140,48 @@ static int tsb_uart_dev_probe(struct device *dev)
 
     lldbg("LL uart info struct: 0x%08p\n", uart_info);
 
+
+
+   
+
     ret = tsb_uart_extract_resources(dev, uart_info);
     if (ret)
         goto err_free_info;
 
-    flags = irqsave();
-
-    ret = irq_attach(uart_info->uart_irq, uart_irq_handler);
-    if (ret != SUCCESS) {
+    ret = sem_init(&uart_info->tx_sem, 0, 0);
+    if (ret) {
         goto err_free_info;
     }
 
+    ret = sem_init(&uart_info->rx_sem, 0, 0);
+    if (ret) {
+        goto err_free_info;
+    }
 
-	up_enable_irq(uart_info->uart_irq);
-	
+    flags = irqsave();
+
+    ret = irq_attach(uart_info->uart_irq, uart_irq_handler);
+    if (ret) {
+        goto err_free_info;
+    }
+
+    /* Disable all interrupts */
+    ua_reg_bit_clr(uart_info->reg_base,
+                   UA_IER_DLH, UA_IER_ERBFI | UA_IER_ETBEI | UA_IER_ELSI |
+                   UA_IER_EDSSI | UA_IER_PTIME);
+
+    up_enable_irq(uart_info->uart_irq);
+
     uart_info->dev = dev;
     dev->private = uart_info;
     saved_dev = dev;
 
     irqrestore(flags);
 
+
+	//	lldbg("LL tsb_uart_dev_probe  uart_info->flags %x   \n", uart_info->flags);
+	 
+    
 
 	//lldbg("LL tsb_get_pinshare: 0x%x ++ \n", tsb_get_pinshare());
 	//tsb_set_pinshare(TSB_PIN_UART_RXTX);	
@@ -1107,25 +1196,28 @@ static int tsb_uart_dev_probe(struct device *dev)
 	tsb_uart_set_configuration2(dev);
 	
 	
-    return SUCCESS;
+	//dump_regs(uart_info->reg_base);
+	
+	//lldbg("LL tsb_uart_dev_probe success %x   \n", ret);
+    return ret;
 
-err_attach_irq:
     irq_detach(uart_info->uart_irq);
 err_free_info:
     free(uart_info);
 
+	//lldbg("LL tsb_uart_dev_probe  error  %x   \n", ret);
     return ret;
 }
 
 
 /**
-* @brief The device remove function
+* @brief The device remove function.
 *
 * This function is called by the system to unregister this driver. It
 * must be called after probe() and open(). It detaches IRQ handlers and frees
 * the internal information memory space.
 *
-* @param dev pointer to the UART device structure
+* @param dev The pointer to the UART device structure.
 * @return None.
 */
 static void tsb_uart_dev_remove(struct device *dev)
@@ -1151,7 +1243,7 @@ static struct device_uart_type_ops tsb_uart_type_ops = {
     .get_modem_ctrl     = tsb_uart_get_modem_ctrl,
     .set_modem_ctrl     = tsb_uart_set_modem_ctrl,
     .get_modem_status   = tsb_uart_get_modem_status,
-    .get_line_status   = tsb_uart_get_line_status,
+    .get_line_status    = tsb_uart_get_line_status,
     .set_break          = tsb_uart_set_break,
     .attach_ms_callback = tsb_uart_attach_ms_callback,
     .attach_ls_callback = tsb_uart_attach_ls_callback,
