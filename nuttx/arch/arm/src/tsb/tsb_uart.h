@@ -63,6 +63,11 @@
 /* DLAB = 1 */
 #define UA_DLH_MASK         0x7F    /* Divisor Latch register */
 
+//
+#define UART_115200_BPS     26
+#define UART_DLL_115200     ((UART_115200_BPS >> 0) & 0xff)
+#define UART_DLH_115200     ((UART_115200_BPS >> 8) & 0xff)
+
 /*
  * UA_FCR_IIR
  */

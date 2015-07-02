@@ -31,6 +31,10 @@
 #define UART_LSR_THRE (0x1 << 5)
 
 void tsb_lowsetup(void) {
+	
+	//do nothing 
+	lldbg("LL uart  do nothing  \n");
+	return ;
     int i;
 
     /* enable UART RX/TX pins */
