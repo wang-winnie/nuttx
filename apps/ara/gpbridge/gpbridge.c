@@ -31,6 +31,11 @@ int bridge_main(int argc, char *argv[])
     gb_unipro_init();
     enable_cports();
 
+#ifdef CONFIG_ARA_UART	
+	printf("Calling uart test \n");
+	uart_test_main(argc, argv);
+#endif	
+
 #ifdef CONFIG_EXAMPLES_NSH
     printf("Calling NSH\n");
     return nsh_main(argc, argv);

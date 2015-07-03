@@ -47,7 +47,7 @@
 
 //#include "uart_test.h"
 
-#if 1
+#if 0
 
 /**
  * @brief The modem status change callback function.
@@ -1303,7 +1303,7 @@ static int gb_uart_init(unsigned int cport)
 			fprintf(stderr, "device_uart_set_configuration failed: %d\n", ret);
 			
 		}
-	  do_all_test(info->dev);
+	  //do_all_test(info->dev);
 	 }
 	 
     return 0;
@@ -1368,6 +1368,12 @@ struct gb_driver uart_driver = {
 void gb_uart_register(int cport)
 {
     gb_info("%s(): cport %d \n", __func__, cport);
-    gb_register_driver(cport, &uart_driver);
+ #ifdef CONFIG_ARA_UART	
+	printf("remove register uart  \n");
+#else
+	gb_register_driver(cport, &uart_driver);
+#endif	
+ 
+    
 }
 

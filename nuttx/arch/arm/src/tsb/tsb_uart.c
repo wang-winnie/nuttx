@@ -265,14 +265,14 @@ static void uart_recvchars(struct tsb_uart_info *uart_info, uint8_t int_id)
                         ua_getreg(uart_info->reg_base, UA_RBR_THR_DLL);
      
 		
-         //lldbg("uart_recvchars char  ch  %c \n",ua_getreg(uart_info->reg_base,UA_RBR_THR_DLL));  
+         lldbg("uart_recvchars char  %c \n",ua_getreg(uart_info->reg_base,UA_RBR_THR_DLL));  
          
           
        //  lldbg("LL uart_recvchars interrupt_id  ch  %x \n",ua_get_char(uart_info->reg_base));             
        
         if (uart_info->recv.head == uart_info->recv.tail ||
            int_id == UA_INTERRUPT_ID_TO) {
-				lldbg("uart_recvchars interrupt_id  222 0x%x \n",int_id);
+				lldbg("uart_recvchars 2 interrupt_id 0x%x \n",int_id);
            /* Disable receive interrupt */
             ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ERBFI);
 
@@ -321,11 +321,10 @@ static int uart_irq_handler(int irq, void *context)
             break;
         case UA_INTERRUPT_ID_LS:
             status = ua_getreg(uart_info->reg_base, UA_LSR);
-            lldbg("UA_INTERRUPT_ID_LS :  \n");
-				
+            	
             if (uart_info->ls_callback) {
                 uart_info->ls_callback(status);
-                lldbg("! UA_INTERRUPT_ID_LS : %d \n",status);
+             
             }
             break;
         case UA_INTERRUPT_ID_TX:
@@ -711,12 +710,12 @@ static int tsb_uart_attach_ls_callback(struct device *dev,
     }
 
     uart_info = dev->private;
-	lldbg("tsb_uart_attach_ls_callback :  \n");
+	//lldbg("tsb_uart_attach_ls_callback :  \n");
 	
 	
 	
     if (callback == NULL) {
-		lldbg("tsb_uart_attach_ls_callback : 1  \n");
+		//lldbg("tsb_uart_attach_ls_callback : 1  \n");
         /* Disable line status interrupt. */
         ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ELSI);
         uart_info->ls_callback = NULL;
