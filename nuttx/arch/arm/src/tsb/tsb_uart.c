@@ -238,7 +238,7 @@ static void uart_xmitchars(struct tsb_uart_info *uart_info)
             }
             else {
                 sem_post(&uart_info->tx_sem);
-                lldbg("xmit: tx sem_post \n");
+              //  lldbg("xmit: tx sem_post \n");
             }
         }
     }
@@ -265,14 +265,12 @@ static void uart_recvchars(struct tsb_uart_info *uart_info, uint8_t int_id)
                         ua_getreg(uart_info->reg_base, UA_RBR_THR_DLL);
      
 		
-         lldbg("uart_recvchars char  %c \n",ua_getreg(uart_info->reg_base,UA_RBR_THR_DLL));  
+        //lldbg("uart_recvchars char  %c \n",ua_getreg(uart_info->reg_base,UA_RBR_THR_DLL));  
          
-          
-       //  lldbg("LL uart_recvchars interrupt_id  ch  %x \n",ua_get_char(uart_info->reg_base));             
        
         if (uart_info->recv.head == uart_info->recv.tail ||
            int_id == UA_INTERRUPT_ID_TO) {
-				lldbg("uart_recvchars 2 interrupt_id 0x%x \n",int_id);
+			//	lldbg("uart_recvchars 2 interrupt_id 0x%x \n",int_id);
            /* Disable receive interrupt */
             ua_reg_bit_clr(uart_info->reg_base, UA_IER_DLH, UA_IER_ERBFI);
 
@@ -758,7 +756,7 @@ static int tsb_uart_start_transmitter(struct device *dev, uint8_t *buffer,
     if (dev == NULL) {
         return -EINVAL;
     }
-
+	lldbg("tsb_uart_start_transmitter :  \n");
 	//int i=0;
 	//for (i=0; i<length ;i++)
 	//	lldbg("LL uart info tsb_uart_start_transmitter char[%d] = %c ++ \n",i, buffer[i]);
@@ -869,7 +867,7 @@ static int tsb_uart_start_receiver(struct device *dev, uint8_t *buffer,
                                                     int error))
 {
     struct tsb_uart_info *uart_info = NULL;
-
+	//lldbg("tsb_uart_start_receiver ++ \n");
     if (dev == NULL) {
         return -EINVAL;
     }
@@ -895,7 +893,7 @@ static int tsb_uart_start_receiver(struct device *dev, uint8_t *buffer,
     if (!uart_info->rx_callback) {
         sem_wait(&uart_info->rx_sem);
         if (got) {
-            *got = uart_info->xmit.head;
+            *got = uart_info->recv.head;
         }
         uart_info->flags &= ~TSB_UART_FLAG_RECV;
     }

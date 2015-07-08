@@ -54,10 +54,7 @@
  */
 static void ms_callback(uint8_t ms)
 {
-   // fprintf(stdout, "ms_callback: (%u)\n", ms);
-   //printf("ms_callback %x\n", ms);
-   //printf("ms_callback \n");
-   
+  
    gb_info("%s():   +++ %x    \n", __func__,ms);
     
 }
@@ -72,39 +69,12 @@ static void ms_callback(uint8_t ms)
  */
 static void ls_callback(uint8_t ls)
 {
-  //  fprintf(stdout, "ls_callback: (%u)\n", ls);
-  // printf("ls_callback %x \n",ls);
-   //printf("ls_callback \n");
    
    gb_info("%s():   +++ %x    \n", __func__,ls);
      
 }
 
-/**
- * @brief The receive callback function.
- *
- * For verifying the driver can correctly call this callback.
- *
- * @param ls The present UART line status.
- * @return None.
- */
-static void rx_callback(uint8_t *buffer, int length, int error)
-{
-	int i = 0;
-    buffer[length] = 0x00; /* string end */
-    gb_info("%s():   +++  length %d    \n", __func__,length);
-    gb_info("%s():   +++ data = %s, length = %d, error = %d    \n", __func__,buffer, length, error);
-    
-   // fprintf(stderr, "rx_callback: length %d \n", length);
-   // fprintf(stdout, " data = %s, length = %d, error = %d\n",
-   //         buffer, length, error);
-   
-	//for(i=0;i< length;i++)
-		//fprintf(stdout, "rx_callback: char[%d] = %c \n", i,buffer[i]);
-		
-		
-		
-}
+
 
 /**
  * @brief The transmit callback function.
@@ -116,9 +86,11 @@ static void rx_callback(uint8_t *buffer, int length, int error)
  */
 static void tx_callback(uint8_t *buffer, int length, int error)
 {
-    fprintf(stderr, "tx_callback:\n");
-    fprintf(stderr, " data = %s, length = %d, error = %d\n",
-            buffer, length, error);
+  //  fprintf(stderr, "tx_callback:\n");
+   // fprintf(stderr, " data = %s, length = %d, error = %d\n",
+   //         buffer, length, error);
+  //gb_info("%s():   +++  length %d    \n", __func__,length);
+    gb_info("%s():   +++ data = %s, length = %d, error = %d    \n", __func__,buffer, length, error);
 }
 
 /**
@@ -136,10 +108,12 @@ static int do_test_set_modem_ctrl(struct device *dev)
     uint8_t modem_ctrl;
 
     modem_ctrl = (MCR_RTS | MCR_LPBK);
-    fprintf(stderr, "set modem control = %u\n", modem_ctrl);
+   
+    gb_info("%s(): set modem control %x    \n", __func__,modem_ctrl);
+
     ret = device_uart_set_modem_ctrl(dev, &modem_ctrl);
     if (ret) {
-        fprintf(stderr, "device_uart_set_modem_ctrl failed: %d \n", ret);
+        gb_info("%s(): device_uart_set_modem_ctrl failed: %d   \n", __func__,ret);
         return ret;
     }
     return 0;
@@ -162,10 +136,11 @@ static int do_test_get_modem_ctrl(struct device *dev)
 
     ret = device_uart_get_modem_ctrl(dev, &modem_ctrl);
     if (ret) {
-        fprintf(stderr, "device_uart_get_modem_status failed: %d\n", ret);
+        gb_info("%s(): device_uart_get_modem_ctrl failed: %d   \n", __func__,ret);
         return ret;
     }
-    fprintf(stderr, "get modem control = %u\n", modem_ctrl);
+
+    gb_info("%s(): get modem control %x    \n", __func__,modem_ctrl);
     return 0;
 }
 
@@ -186,10 +161,10 @@ static int do_test_get_modem_status(struct device *dev)
 
     ret = device_uart_get_modem_status(dev, &modem_status);
     if (ret) {
-        fprintf(stderr, "device_uart_get_modem_status failed: %d\n", ret);
+        gb_info("%s(): device_uart_get_modem_status failed: %d   \n", __func__,ret);
         return ret;
     }
-    fprintf(stderr, "get modem status = %u\n", modem_status);
+    gb_info("%s(): get modem status %x    \n", __func__,modem_status);
     return 0;
 }
 
@@ -210,10 +185,10 @@ static int do_test_get_line_status(struct device *dev)
 
     ret = device_uart_get_line_status(dev, &line_status);
     if (ret) {
-        fprintf(stderr, "do_test_get_line_status failed: %d\n", ret);
+        gb_info("%s(): device_uart_get_line_status failed: %d   \n", __func__,ret);
         return ret;
     }
-    fprintf(stderr, "get line status = %x\n", line_status);
+    gb_info("%s(): get line status %x    \n", __func__,line_status);
     return 0;
 }
 
@@ -227,19 +202,28 @@ static int do_test_get_line_status(struct device *dev)
  * @param dev The device driver handler.
  * @return 0 for success, -errno for failures.
  */
-static int do_test_set_break(struct device *dev)
+static int do_test_set_break_on(struct device *dev)
 {
     int ret;
 
     ret = device_uart_set_break(dev, 1);
     if (ret) {
-        fprintf(stderr, "device_uart_set_break 1 failed: %d\n", ret);
+        gb_info("%s():  failed: %d \n", __func__,ret);
         return ret;
     }
 
+
+    return 0;
+}
+
+
+static int do_test_set_break_off(struct device *dev)
+{
+    int ret;
+
     ret = device_uart_set_break(dev, 0);
     if (ret) {
-        fprintf(stderr, "device_uart_set_break 0 failed: %d\n", ret);
+        gb_info("%s():  failed: %d \n", __func__,ret);
         return ret;
     }
     return 0;
@@ -261,15 +245,17 @@ static int do_test_attach_ms_callback(struct device *dev)
 
     ret = device_uart_attach_ms_callback(dev, NULL);
     if (ret) {
-        fprintf(stderr, "device_uart_attach_ms_callback NULL failed: %d \n",
-               ret);
+        //fprintf(stderr, "device_uart_attach_ms_callback NULL failed: %d \n",
+        //       ret);
+        gb_info("%s():  NULL failed: %d \n", __func__,ret);
         return ret;
     }
 
     ret = device_uart_attach_ms_callback(dev, ms_callback);
     if (ret) {
-        fprintf(stderr, "device_uart_attach_ms_callback with callback: %d\n",
-               ret);
+        //fprintf(stderr, "device_uart_attach_ms_callback with callback: %d\n",
+        //       ret);
+        gb_info("%s():  with callback:: %d \n", __func__,ret);       
         return ret;
     }
     return 0;
@@ -291,15 +277,17 @@ static int do_test_attach_ls_callback(struct device *dev)
 
     ret = device_uart_attach_ls_callback(dev, NULL);
     if (ret) {
-        fprintf(stderr, "device_uart_attach_ms_callback NULL failed: %d \n",
-               ret);
+        //fprintf(stderr, "device_uart_attach_ms_callback NULL failed: %d \n",
+         //      ret);
+         gb_info("%s():  NULL failed: %d \n", __func__,ret);      
         return ret;
     }
 
     ret = device_uart_attach_ls_callback(dev, ls_callback);
     if (ret) {
-        fprintf(stderr, "device_uart_attach_ms_callback with callback: %d\n",
-               ret);
+        //fprintf(stderr, "device_uart_attach_ms_callback with callback: %d\n",
+        //       ret);
+        gb_info("%s():  with callback:: %d \n", __func__,ret);  
         return ret;
     }
     return 0;
@@ -318,19 +306,24 @@ static int do_test_data_transmit(struct device *dev)
     int ret, xmit = 0;
     uint8_t tx_buf[] = "transmit test";
 
-	fprintf(stderr, "device_uart_start_transmitter ++: \n" );
-	
+	//fprintf(stderr, "device_uart_start_transmitter ++: \n" );
+	gb_info("%s(): ++: \n", __func__);
     ret = device_uart_start_transmitter(dev, tx_buf, sizeof(tx_buf), NULL,
                                         &xmit, NULL);
+    gb_info("%s(): --: \n", __func__);
     if (ret) {
-        fprintf(stderr, "device_uart_start_transmitter failed: %d\n", ret);
+        //fprintf(stderr, "device_uart_start_transmitter failed: %d\n", ret);
+         gb_info("%s(): device_uart_start_transmitter failed: %d \n", __func__,ret);
         return ret;
     }
 
-    fprintf(stderr, "device_uart_start_transmitter: sent = %d\n", xmit);
+    //fprintf(stderr, "device_uart_start_transmitter: sent = %d\n", xmit);
+    //gb_info("%s(): device_uart_start_transmitter sent: %d \n", __func__,xmit);
 
     return 0;
 }
+
+static void rx_callback(uint8_t *buffer, int length, int error);
 
 /**
  * @brief The data receive test.
@@ -344,17 +337,19 @@ static int do_test_data_receive(struct device *dev)
 {
     int ret, recv = 0;
     uint8_t rx_buf[16];
+   // memset(&rx_buf,0x00,sizeof(rx_buf));
 
-    ret = device_uart_start_receiver(dev, rx_buf, 16, NULL, &recv, rx_callback);
+    ret = device_uart_start_receiver(dev, rx_buf, 16, NULL, NULL, rx_callback);
     if (ret) {
-        fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
+        //fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
+        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret);
         return ret;
     }
 
     rx_buf[recv] = 0x00; /* string end */
-    fprintf(stderr, "device_uart_start_receiver: data = %s, recv = %d",
-            rx_buf, recv);
-
+    //fprintf(stderr, "device_uart_start_receiver: data = %s, recv = %d",
+    //        rx_buf, recv);
+	//gb_info("%s():device_uart_start_receiver: data = %s, recv = %d \n", __func__,rx_buf, recv);
     return 0;
 }
 
@@ -385,14 +380,16 @@ static int do_test_data_loopback(struct device *dev)
     ret = device_uart_start_receiver(dev, rx_buf, 16, NULL, NULL,
                                      &rx_callback);
     if (!ret) {
-        fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
+        //fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
+        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret);
         return ret;
     }
 
     ret = device_uart_start_transmitter(dev, tx_buf, sizeof(tx_buf), NULL,
                                         NULL, &tx_callback);
     if (!ret) {
-        fprintf(stderr, "device_uart_start_transmitter failed: %d\n", ret);
+        //fprintf(stderr, "device_uart_start_transmitter failed: %d\n", ret);
+        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret);
         return ret;
     }
 
@@ -428,12 +425,13 @@ static void do_all_test(struct device *dev)
 
 enum {
     HELP,
-    PROTOCOL_VERSION,
     SEND_DATA,
     RECEIVE_DATA,
     SET_LINE_CODING,
     SET_CONTROL_LINE_STATE,
-    SEND_BREAK,
+    GET_CONTROL_LINE_STATE,
+    SEND_BREAK_ON,
+    SEND_BREAK_OFF,
     SERIAL_STATE,
     MAX_CMD,
 };
@@ -441,40 +439,36 @@ enum {
 struct command {
     const char shortc;
     const char *longc;
-    const char *argspec;
     const char *help;
 };
 
 static const struct command commands[] = {
-    [HELP]					= {'h', "help", NULL, "Print this message and exit"},
-    [PROTOCOL_VERSION]		= {'p', "protocol-version", NULL, "Print number of protocol version\n" },
-    [SEND_DATA]				= {'s', "send-data", "<uart> [...]", "Send data to UART"},
-    [RECEIVE_DATA]			= {'r', "receive-data","<uart> [...]", "receive data from UART"},
-    [SET_LINE_CODING]		= {'l', "set-line-coding", "<uart> [...]","set line coding to UART"},
-    [SET_CONTROL_LINE_STATE]= {'c', "set-control-state", "<uart> [...]","set control line to UART"},
-    [SEND_BREAK]			= {'b', "send-break", "<uart> [...]", "send break to UART"},
-    [SERIAL_STATE]			= {'e', "serial-state", "<uart> [...]", "Get serial state value"},
+    [HELP]					= {'h', "help", "Print this message and exit"},
+    [SEND_DATA]				= {'s', "send-data", "Send data to UART"},
+    [RECEIVE_DATA]			= {'r', "receive-data", "receive data from UART"},
+    [SET_LINE_CODING]		= {'l', "set-line-coding","set line coding to UART"},
+    [SET_CONTROL_LINE_STATE]= {'c', "set-control-state","set control line to UART"},
+    [GET_CONTROL_LINE_STATE]= {'C', "get-control-state","get control line to UART"},
+    [SEND_BREAK_ON]			= {'B', "send-break", "send break ON to UART"},
+    [SEND_BREAK_OFF]		= {'b', "send-break", "send break ON to UART"},
+    [SERIAL_STATE]			= {'e', "serial-state", "Get serial state value"},
 };
 
 
 static void print_usage(void)
 {
     int i;
-    printf("uart: usage:\n");
+  
+    gb_info("%s(): uart: usage: ++ \n", __func__);
     for (i = 0; i < MAX_CMD; i++) {
-        const char *argspec = commands[i].argspec;
         const char *space = " ";
-        if (!argspec) {
-            space = "";
-            argspec = "";
-        }
-        printf(" uart_test [%c|%s]%s%s: %s\n",
+
+        gb_info("%s():uart_test [%c|%s]%s: %s \n", __func__,
                commands[i].shortc, commands[i].longc,
-               space, argspec,
+               space,
                commands[i].help);
     }
-    printf("\n"
-           "<uart> values range from 0 to the line count minus one.\n");
+    gb_info("%s(): uart: usage: --  \n", __func__);       
 }
 
 static void usage(int exit_status)
@@ -490,7 +484,7 @@ static void get_protocol_version(void)
     //printf("uart line count: %u\n", gpio_line_count());
 }
 
-
+struct device *dev;
 
 #ifdef CONFIG_BUILD_KERNEL
 int main(int argc, FAR char *argv[])
@@ -499,34 +493,28 @@ int uart_test_main(int argc, char *argv[])
 #endif
 {
 #if 1
-    struct device *dev;
+   // struct device *dev;
     int ret;
    
   
-   
-    //fprintf(stderr, "hello uart_test_main start.\n");
-
-
 	gb_info("%s():  hello  +++   \n", __func__);
 
-	//usleep(50*1000);
-	//fprintf(stderr, "hello device_open start.\n");
+
     dev = device_open(DEVICE_TYPE_UART_HW, 0);
     if (dev == NULL) {
-        fprintf(stderr, "open failed\n");
+        gb_info("%s(): open failed \n", __func__);
         return -EIO;
     }
 
     ret = device_uart_set_configuration(dev, BAUD_115200, NO_PARITY, 8,
                                         ONE_STOP_BIT, 0);
     if (ret) {
-        fprintf(stderr, "device_uart_set_configuration failed: %d\n", ret);
+        gb_info("%s(): device_uart_set_configuration failed %d \n", __func__,ret);
         goto err_device_opened;
     }
     
-    
-    
-    do_all_test(dev);
+ 
+   // do_all_test(dev);
     /*
     ret = do_test_data_loopback(dev);
     if (ret) {
@@ -534,8 +522,12 @@ int uart_test_main(int argc, char *argv[])
     }
 	*/
 
+	do_test_data_transmit(dev);
+
+	do_test_data_receive(dev);
+
 err_device_opened:
-    device_close(dev);
+  //  device_close(dev);
 
     return 0;
 
@@ -640,4 +632,78 @@ err_device_opened:
     }
     return 0;
 #endif
+}
+
+
+/**
+ * @brief The receive callback function.
+ *
+ * For verifying the driver can correctly call this callback.
+ *
+ * @param ls The present UART line status.
+ * @return None.
+ */
+static void rx_callback(uint8_t *buffer, int length, int error)
+{
+	int i = 0;
+    buffer[length] = 0x00; /* string end */
+    //gb_info("%s(): length %d    \n", __func__,length);
+    gb_info("%s(): data = %s, length = %d, error = %d    \n", __func__,buffer, length, error);
+ 	//gb_info("%s():   +++   length = %d \n", __func__,length );
+
+	//for(i=0;i< length;i++)
+		//gb_info("%s(): char[%d] = %c   \n", __func__,i,buffer[i]);
+		
+  
+ 
+
+
+    
+	switch (buffer[0]) {
+  //   These are special cases. 
+    case 'h':
+        print_usage();
+        break;
+    case 'c':
+        do_test_set_modem_ctrl(dev);
+        break;
+    case 'C':
+        do_test_get_modem_ctrl(dev); //??
+        break;
+    case 'e':
+        do_test_get_modem_status(dev);
+        break;
+    case 'l':
+        do_test_get_line_status(dev);
+        break;
+    case 'B':
+        do_test_set_break_on(dev);
+        break;
+    case 'b':
+        do_test_set_break_off(dev);
+        break;
+    case 's':
+        do_test_data_transmit(dev);
+        break;
+	default:
+		gb_info("%s(): length %d    \n", __func__,length);
+		break;
+        
+	}
+    
+  
+      int ret, recv = 0;
+    uint8_t rx_buf2[16];
+   // memset(&rx_buf,0x00,sizeof(rx_buf));
+
+    ret = device_uart_start_receiver(dev, rx_buf2, 16, NULL, NULL, rx_callback);
+    if (ret) {
+        //fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
+        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret);
+        
+    }
+    
+ 
+    //do_test_data_receive(dev);    	
+		
 }
