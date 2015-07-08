@@ -495,10 +495,8 @@ int uart_test_main(int argc, char *argv[])
 #if 1
    // struct device *dev;
     int ret;
-   
-  
+     
 	gb_info("%s():  hello  +++   \n", __func__);
-
 
     dev = device_open(DEVICE_TYPE_UART_HW, 0);
     if (dev == NULL) {
@@ -657,7 +655,7 @@ static void rx_callback(uint8_t *buffer, int length, int error)
   
  
 
-
+/*
     
 	switch (buffer[0]) {
   //   These are special cases. 
@@ -690,16 +688,37 @@ static void rx_callback(uint8_t *buffer, int length, int error)
 		break;
         
 	}
+    */
+    
+    
+       int ret, xmit = 0;
+    uint8_t tx_buf[] = "transmit test";
+	
+	//fprintf(stderr, "device_uart_start_transmitter ++: \n" );
+	gb_info("%s(): ++: \n", __func__);
+    ret = device_uart_start_transmitter(dev, tx_buf, sizeof(tx_buf), NULL,
+                                        &xmit, NULL);
+    gb_info("%s(): --: \n", __func__);
+    if (ret) {
+        //fprintf(stderr, "device_uart_start_transmitter failed: %d\n", ret);
+         gb_info("%s(): device_uart_start_transmitter failed: %d \n", __func__,ret);
+ 
+    }
+    
+    
+    
+    
+    
     
   
-      int ret, recv = 0;
+      int ret1, recv = 0;
     uint8_t rx_buf2[16];
    // memset(&rx_buf,0x00,sizeof(rx_buf));
 
-    ret = device_uart_start_receiver(dev, rx_buf2, 16, NULL, NULL, rx_callback);
-    if (ret) {
+    ret1 = device_uart_start_receiver(dev, rx_buf2, 16, NULL, NULL, rx_callback);
+    if (ret1) {
         //fprintf(stderr, "device_uart_start_receiver failed: %d\n", ret);
-        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret);
+        gb_info("%s(): device_uart_start_receiver failed: %d \n", __func__,ret1);
         
     }
     

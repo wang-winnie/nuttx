@@ -306,6 +306,8 @@ static void uart_rx_callback(uint8_t *buffer, int length, int error)
 	//	gb_info("%s(): char[%d] = %c   \n", __func__,i,buffer[i]);
 		
 
+
+
     node = get_node_from(&info->free_queue);
     if (!node) {
         /*
@@ -441,6 +443,17 @@ static void *uart_rx_thread(void *data)
         //if (!node) {
         if (node) {
 			gb_info("%s(): GB uart  node \n", __func__);
+
+				//
+			//u8 test[] = "12345678"; 
+			//gb_info("%s(): GB uart  size  %d\n", __func__,info->rx_node->data_size);
+			//device_uart_start_transmitter(info->dev,
+			//				info->rx_node->buffer, info->rx_node->data_size, NULL,
+			//				NULL, NULL);
+			
+			//
+
+
             ret = gb_operation_send_request(node->operation, NULL, false);
             if (ret) {
                 uart_report_error(GB_UART_EVENT_PROTOCOL_ERROR, __func__);
@@ -855,12 +868,27 @@ static int gb_uart_init(unsigned int cport)
 
 
 	 //test 
-	 /*
-	 gb_info("%s(): GB uart info struct:send_break \n", __func__);
+	 	 {
+		 ret = device_uart_set_configuration(info->dev, BAUD_115200, NO_PARITY, 8,
+                                        ONE_STOP_BIT, 0);
+		if (ret) {
+			fprintf(stderr, "device_uart_set_configuration failed: %d\n", ret);
+			
+		}
+	  //do_all_test(info->dev);
+	 }
+	 
+	 
+	 
+	 	 gb_info("%s(): GB uart info struct:send_break on \n", __func__);
+	 device_uart_set_break(info->dev, 1);
+	 
+	 
+	 gb_info("%s(): GB uart info struct:send_break off \n", __func__);
 	 device_uart_set_break(info->dev, 0);
-	*/
 	
-	/*
+	
+	
 	gb_info("%s(): GB uart info struct:send_data \n", __func__);
 	u8 test[] = "12345678"; 
 	device_uart_start_transmitter(info->dev,
@@ -881,7 +909,7 @@ static int gb_uart_init(unsigned int cport)
 
     fprintf(stderr, "device_uart_start_transmitter: sent = %d\n", xmit);
 	
-	*/
+	
 	
 	/*
 	 gb_info("%s(): GB uart info struct:send_break \n", __func__);
@@ -893,15 +921,7 @@ static int gb_uart_init(unsigned int cport)
 	 
 	 
 	
-	 {
-		 ret = device_uart_set_configuration(info->dev, BAUD_115200, NO_PARITY, 8,
-                                        ONE_STOP_BIT, 0);
-		if (ret) {
-			fprintf(stderr, "device_uart_set_configuration failed: %d\n", ret);
-			
-		}
-	  //do_all_test(info->dev);
-	 }
+
 	 
     return 0;
 

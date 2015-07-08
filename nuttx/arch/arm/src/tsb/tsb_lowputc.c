@@ -33,8 +33,8 @@
 void tsb_lowsetup(void) {
 	
 	//do nothing 
-	lldbg("LL uart  do nothing  \n");
-	return ;
+	//lldbg("LL uart  do nothing  \n");
+	//return ;
     int i;
 
     /* enable UART RX/TX pins */
